@@ -3,6 +3,7 @@ import type { Decision, Env, PortfolioConfig, StockSignal } from "../types";
 import { xstockByTicker } from "../lib/xstocks";
 import { fetchLatestSignals } from "../lib/signals";
 import { decryptWalletSecret, listActiveUsers, type User } from "../lib/users";
+import { fetchUsdcBalance } from "../lib/solana";
 import {
   getConfig,
   getHoldings,
@@ -54,7 +55,29 @@ async function runUserCycle(env: Env, user: User, signals: Map<string, StockSign
 
   const spent = await spentLast24h(env.DB, user.id);
   const decisions = decide(cfg, signals, spent, maxPremiumPct);
-  const buys = decisions.filter((d) => d.action === "buy");
+  let buys = decisions.filter((d) => d.action === "buy");
+
+  // Pre-trade balance check via public RPC; no key material involved.
+  const usdcBalance = dryRun ? null : await fetchUsdcBalance(user.wallet_pubkey, env.SOLANA_RPC_URL);
+  if (!dryRun && buys.length > 0 && usdcBalance !== null) {
+    let available = usdcBalance - 0.05; // headroom for swap fees and rounding
+    const funded: Decision[] = [];
+    for (const d of buys) {
+      if (d.usd <= available) {
+        funded.push(d);
+        available -= d.usd;
+      } else {
+        const idx = decisions.indexOf(d);
+        decisions[idx] = {
+          ...d,
+          action: "skip",
+          usd: 0,
+          reason: `insufficient USDC in the agent wallet ($${usdcBalance.toFixed(2)} available), deposit to resume`,
+        };
+      }
+    }
+    buys = funded;
+  }
 
   const xpay = dryRun || buys.length === 0 ? null : await buildXPayForUser(env, user);
 
@@ -70,8 +93,14 @@ async function runUserCycle(env: Env, user: User, signals: Map<string, StockSign
     }
   }
 
-  await takeEquitySnapshot(env, user, xpay, signals);
-  await logCycle(env.DB, user.id, buys.length > 0 ? "traded" : "idle", { decisions, executed });
+  // Balance may have changed after the buys; re-read for the snapshot.
+  const cash = dryRun
+    ? 0
+    : buys.length > 0
+      ? ((await fetchUsdcBalance(user.wallet_pubkey, env.SOLANA_RPC_URL)) ?? usdcBalance ?? 0)
+      : (usdcBalance ?? 0);
+  await takeEquitySnapshot(env, user, cash, signals);
+  await logCycle(env.DB, user.id, executed.length > 0 ? "traded" : "idle", { decisions, executed });
 }
 
 /**
@@ -197,7 +226,7 @@ async function executeBuy(
 async function takeEquitySnapshot(
   env: Env,
   user: User,
-  xpay: XPay | null,
+  cash: number,
   signals: Map<string, StockSignal>
 ): Promise<void> {
   const holdings = await getHoldings(env.DB, user.id);
@@ -211,14 +240,6 @@ async function takeEquitySnapshot(
     };
   });
 
-  let cash = 0;
-  if (xpay) {
-    try {
-      cash = await xpay.wallet.balance();
-    } catch {
-      // Leave cash at 0 rather than failing the cycle.
-    }
-  }
   await snapshotEquity(env.DB, user.id, round2(cash), breakdown);
 }
 

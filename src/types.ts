@@ -5,6 +5,8 @@ export interface Env {
   SIGNAL_API_BASE: string;
   MAX_PREMIUM_PCT: string;
   SLIPPAGE_BPS: string;
+  /** Privy app id for email login. */
+  PRIVY_APP_ID?: string;
   /** 32-byte base64 key encrypting per-user agent wallet secrets. */
   MASTER_KEY?: string;
   /** When set, POST /api/cycle/run requires this bearer token. */

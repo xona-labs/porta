@@ -4,7 +4,9 @@ import { runCycle } from "./engine/cycle";
 import { getConfig, getHoldings, saveConfig, spentLast24h } from "./lib/db";
 import { XSTOCKS } from "./lib/xstocks";
 import { fetchLatestSignals } from "./lib/signals";
-import { createUser, getUserByToken, type User } from "./lib/users";
+import { createSession, createUser, getUserByPrivyId, getUserByToken, type User } from "./lib/users";
+import { fetchUsdcBalance } from "./lib/solana";
+import { verifyPrivyToken } from "./lib/privy";
 
 type Vars = { user: User };
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -25,14 +27,51 @@ app.get("/api/signals", async (c) => {
 });
 
 /**
- * Onboarding: creates a user with a fresh, isolated agent wallet.
- * Returns the deposit address and the bearer token exactly once.
+ * Login: verifies a Privy access token, finds or creates the user (with a
+ * fresh, isolated agent wallet on first login), and issues a session.
+ */
+app.post("/api/auth/privy", async (c) => {
+  const body = await c.req
+    .json<{ access_token?: string; email?: string }>()
+    .catch(() => ({}) as { access_token?: string; email?: string });
+  if (!body.access_token) return c.json({ error: "missing access_token" }, 400);
+  if (!c.env.PRIVY_APP_ID) return c.json({ error: "PRIVY_APP_ID is not configured" }, 500);
+
+  let privyUserId: string;
+  try {
+    privyUserId = await verifyPrivyToken(c.env.PRIVY_APP_ID, body.access_token);
+  } catch {
+    return c.json({ error: "invalid Privy token" }, 401);
+  }
+
+  try {
+    let user = await getUserByPrivyId(c.env, privyUserId);
+    const isNew = !user;
+    if (!user) {
+      user = await createUser(c.env, { privyUserId, email: body.email });
+    }
+    const token = await createSession(c.env, user.id);
+    return c.json({
+      token,
+      user_id: user.id,
+      deposit_address: user.wallet_pubkey,
+      is_new: isNew,
+    });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+/**
+ * API onboarding for programmatic use (demos, agents): creates a user with
+ * a fresh agent wallet. Returns the bearer token exactly once.
  */
 app.post("/api/users", async (c) => {
-  const body = await c.req.json<{ label?: string }>().catch(() => ({} as { label?: string }));
+  const body = await c.req.json<{ label?: string }>().catch(() => ({}) as { label?: string });
   try {
-    const created = await createUser(c.env, body.label);
-    return c.json(created, 201);
+    const user = await createUser(c.env, { label: body.label });
+    const token = await createSession(c.env, user.id);
+    return c.json({ user_id: user.id, token, deposit_address: user.wallet_pubkey }, 201);
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }
@@ -100,13 +139,15 @@ app.put("/api/me/config", async (c) => {
 
 app.get("/api/me/portfolio", async (c) => {
   const userId = c.get("user").id;
-  const [holdings, spent, cfg] = await Promise.all([
+  const [holdings, spent, cfg, cash] = await Promise.all([
     getHoldings(c.env.DB, userId),
     spentLast24h(c.env.DB, userId),
     getConfig(c.env.DB, userId),
+    fetchUsdcBalance(c.get("user").wallet_pubkey, c.env.SOLANA_RPC_URL),
   ]);
   return c.json({
     deposit_address: c.get("user").wallet_pubkey,
+    cash_usd: cash,
     holdings,
     spent_last_24h_usd: spent,
     caps: cfg
