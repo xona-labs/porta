@@ -82,9 +82,7 @@ app.put("/api/me/config", async (c) => {
   if (Math.abs(weightSum - 1) > 0.001) {
     return c.json({ error: "basket weights must sum to 1" }, 400);
   }
-  if (body.daily_budget_usd > body.max_per_day_usd) {
-    return c.json({ error: "daily budget cannot exceed the daily cap" }, 400);
-  }
+  // The daily cap may sit below the budget; the cap always wins.
   const unknown = body.basket.find((b) => !XSTOCKS.some((s) => s.ticker === b.ticker.toUpperCase()));
   if (unknown) {
     return c.json({ error: `unknown ticker ${unknown.ticker}` }, 400);
