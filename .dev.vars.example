@@ -1,5 +1,8 @@
 # Copy to .dev.vars for local development. Never commit real keys.
-# Base58 secret key of the agent wallet. Only needed when DRY_RUN=false.
-SOLANA_SECRET_KEY=
+# 32-byte base64 key that encrypts per-user agent wallet secrets.
+# Generate one with: openssl rand -base64 32
+MASTER_KEY=
+# Optional: locks POST /api/cycle/run behind this bearer token.
+ADMIN_TOKEN=
 # Optional custom RPC (Helius, Alchemy, ...). Defaults to public mainnet.
 SOLANA_RPC_URL=

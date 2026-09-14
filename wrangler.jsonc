@@ -29,6 +29,7 @@
     "SLIPPAGE_BPS": "100"
   }
   // Secrets (set with `wrangler secret put`):
-  //   SOLANA_SECRET_KEY  base58 secret key of the agent wallet
-  //   SOLANA_RPC_URL     optional, defaults to public mainnet RPC
+  //   MASTER_KEY      32 bytes base64; encrypts per-user agent wallet secrets
+  //   ADMIN_TOKEN     optional; locks POST /api/cycle/run
+  //   SOLANA_RPC_URL  optional, defaults to public mainnet RPC
 }

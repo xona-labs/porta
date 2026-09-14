@@ -19,24 +19,73 @@ interface Trade {
   reasoning: string;
 }
 
-function useJson<T>(url: string): T | null {
+function useAuthedJson<T>(url: string, token: string | null): T | null {
   const [data, setData] = useState<T | null>(null);
   useEffect(() => {
+    if (!token) return;
     let alive = true;
-    fetch(url)
-      .then((r) => r.json())
+    fetch(url, { headers: { authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => alive && setData(d as T))
       .catch(() => {});
     return () => {
       alive = false;
     };
-  }, [url]);
+  }, [url, token]);
   return data;
 }
 
+function readStoredToken(): string | null {
+  try {
+    return localStorage.getItem("porta_token");
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
-  const portfolio = useJson<{ holdings: Holding[]; spent_last_24h_usd: number }>("/api/portfolio");
-  const trades = useJson<{ trades: Trade[] }>("/api/trades?limit=20");
+  const [token, setToken] = useState<string | null>(readStoredToken);
+  const [input, setInput] = useState("");
+
+  const portfolio = useAuthedJson<{
+    deposit_address: string;
+    holdings: Holding[];
+    spent_last_24h_usd: number;
+  }>("/api/me/portfolio", token);
+  const trades = useAuthedJson<{ trades: Trade[] }>("/api/me/trades?limit=20", token);
+
+  const saveToken = () => {
+    const t = input.trim();
+    if (!t) return;
+    try {
+      localStorage.setItem("porta_token", t);
+    } catch {}
+    setToken(t);
+  };
+
+  if (!token) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-20">
+        <h1 className="text-2xl font-semibold tracking-tight">Porta</h1>
+        <p className="mb-6 text-sm text-neutral-500">
+          Your portfolio, on autopilot. Capped, explained, on Solana.
+        </p>
+        <label className="mb-1 block text-sm font-medium">Access token</label>
+        <input
+          className="mb-3 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Paste the token from onboarding"
+        />
+        <button
+          onClick={saveToken}
+          className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white"
+        >
+          Open portfolio
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
@@ -45,6 +94,11 @@ export default function App() {
         <p className="text-sm text-neutral-500">
           Your portfolio, on autopilot. Capped, explained, on Solana.
         </p>
+        {portfolio?.deposit_address ? (
+          <p className="mt-2 text-xs text-neutral-400">
+            Agent wallet: <span className="font-mono">{portfolio.deposit_address}</span>
+          </p>
+        ) : null}
       </header>
 
       <section className="mb-8">

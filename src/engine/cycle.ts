@@ -1,7 +1,8 @@
 import { createXPay, rawSolanaSigner, type XPay } from "@xona-labs/xpay";
 import type { Decision, Env, PortfolioConfig, StockSignal } from "../types";
-import { XSTOCKS, xstockByTicker } from "../lib/xstocks";
+import { xstockByTicker } from "../lib/xstocks";
 import { fetchLatestSignals } from "../lib/signals";
+import { decryptWalletSecret, listActiveUsers, type User } from "../lib/users";
 import {
   getConfig,
   getHoldings,
@@ -16,52 +17,61 @@ const CYCLES_PER_DAY = 48;
 const MIN_TICKET_USD = 0.5;
 
 /**
- * One engine pass: read signals, decide per basket entry, enforce caps and
- * the premium guard, execute (or simulate) buys, and snapshot equity.
+ * One engine pass over every active portfolio. Signals are fetched once
+ * and shared; decisions, caps, and wallets are strictly per user.
  */
 export async function runCycle(env: Env): Promise<void> {
-  const cfg = await getConfig(env.DB);
-  if (!cfg) {
-    await logCycle(env.DB, "skipped", { reason: "no portfolio configured" });
+  let signals: Map<string, StockSignal>;
+  try {
+    signals = await fetchLatestSignals(env.SIGNAL_API_BASE);
+  } catch (err) {
+    await logCycle(env.DB, null, "error", { reason: "signal feed unavailable", error: String(err) });
     return;
   }
-  if (cfg.paused) {
-    await logCycle(env.DB, "skipped", { reason: "portfolio paused" });
+
+  const users = await listActiveUsers(env.DB);
+  if (users.length === 0) {
+    await logCycle(env.DB, null, "idle", { reason: "no active portfolios" });
     return;
   }
+
+  for (const user of users) {
+    try {
+      await runUserCycle(env, user, signals);
+    } catch (err) {
+      await logCycle(env.DB, user.id, "error", { error: String(err) });
+    }
+  }
+}
+
+async function runUserCycle(env: Env, user: User, signals: Map<string, StockSignal>): Promise<void> {
+  const cfg = await getConfig(env.DB, user.id);
+  if (!cfg || cfg.paused) return;
 
   const dryRun = env.DRY_RUN !== "false";
   const maxPremiumPct = parseFloat(env.MAX_PREMIUM_PCT) || 1.5;
   const slippageBps = parseInt(env.SLIPPAGE_BPS, 10) || 100;
 
-  let signals: Map<string, StockSignal>;
-  try {
-    signals = await fetchLatestSignals(env.SIGNAL_API_BASE);
-  } catch (err) {
-    await logCycle(env.DB, "error", { reason: "signal feed unavailable", error: String(err) });
-    return;
-  }
-
-  const spent = await spentLast24h(env.DB);
+  const spent = await spentLast24h(env.DB, user.id);
   const decisions = decide(cfg, signals, spent, maxPremiumPct);
-
   const buys = decisions.filter((d) => d.action === "buy");
-  const xpay = dryRun ? null : buildXPay(env);
+
+  const xpay = dryRun || buys.length === 0 ? null : await buildXPayForUser(env, user);
 
   const executed: unknown[] = [];
   for (const d of buys) {
     const stock = xstockByTicker(d.ticker);
     if (!stock) continue;
     try {
-      const result = await executeBuy(env, xpay, stock.mint, d, dryRun, slippageBps);
+      const result = await executeBuy(env, user.id, xpay, stock.mint, d, dryRun, slippageBps);
       executed.push(result);
     } catch (err) {
-      await logCycle(env.DB, "trade_error", { ticker: d.ticker, error: String(err) });
+      await logCycle(env.DB, user.id, "trade_error", { ticker: d.ticker, error: String(err) });
     }
   }
 
-  await takeEquitySnapshot(env, xpay, signals);
-  await logCycle(env.DB, buys.length > 0 ? "traded" : "idle", { decisions, executed });
+  await takeEquitySnapshot(env, user, xpay, signals);
+  await logCycle(env.DB, user.id, buys.length > 0 ? "traded" : "idle", { decisions, executed });
 }
 
 /**
@@ -133,23 +143,19 @@ export function decide(
   return decisions;
 }
 
-function buildXPay(env: Env): XPay {
-  if (!env.SOLANA_SECRET_KEY) {
-    throw new Error("SOLANA_SECRET_KEY secret is not set; cannot trade with DRY_RUN=false");
-  }
+async function buildXPayForUser(env: Env, user: User): Promise<XPay> {
+  const secretKey = await decryptWalletSecret(env, user);
   return createXPay({
     networks: ["solana"],
     signers: {
-      solana: rawSolanaSigner({
-        secretKey: env.SOLANA_SECRET_KEY,
-        rpcUrl: env.SOLANA_RPC_URL,
-      }),
+      solana: rawSolanaSigner({ secretKey, rpcUrl: env.SOLANA_RPC_URL }),
     },
   });
 }
 
 async function executeBuy(
   env: Env,
+  userId: string,
   xpay: XPay | null,
   mint: string,
   d: Decision,
@@ -160,7 +166,7 @@ async function executeBuy(
 
   if (dryRun || !xpay) {
     const qty = refPrice ? d.usd / refPrice : 0;
-    await recordTrade(env.DB, {
+    await recordTrade(env.DB, userId, {
       ticker: d.ticker,
       side: "buy",
       usd: d.usd,
@@ -175,7 +181,7 @@ async function executeBuy(
 
   const result = await xpay.swap({ amount: d.usd, from: "USDC", to: mint, slippageBps });
   const qty = Number(result.totalOutAmount);
-  await recordTrade(env.DB, {
+  await recordTrade(env.DB, userId, {
     ticker: d.ticker,
     side: "buy",
     usd: d.usd,
@@ -190,10 +196,11 @@ async function executeBuy(
 
 async function takeEquitySnapshot(
   env: Env,
+  user: User,
   xpay: XPay | null,
   signals: Map<string, StockSignal>
 ): Promise<void> {
-  const holdings = await getHoldings(env.DB);
+  const holdings = await getHoldings(env.DB, user.id);
   // Marks to the signal feed's on-chain price; falls back to cost basis.
   const breakdown = holdings.map((h) => {
     const price = signals.get(h.ticker)?.onchain_price ?? null;
@@ -212,7 +219,7 @@ async function takeEquitySnapshot(
       // Leave cash at 0 rather than failing the cycle.
     }
   }
-  await snapshotEquity(env.DB, round2(cash), breakdown);
+  await snapshotEquity(env.DB, user.id, round2(cash), breakdown);
 }
 
 function round2(n: number): number {

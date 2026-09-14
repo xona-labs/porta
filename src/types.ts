@@ -5,7 +5,10 @@ export interface Env {
   SIGNAL_API_BASE: string;
   MAX_PREMIUM_PCT: string;
   SLIPPAGE_BPS: string;
-  SOLANA_SECRET_KEY?: string;
+  /** 32-byte base64 key encrypting per-user agent wallet secrets. */
+  MASTER_KEY?: string;
+  /** When set, POST /api/cycle/run requires this bearer token. */
+  ADMIN_TOKEN?: string;
   SOLANA_RPC_URL?: string;
 }
 
@@ -15,7 +18,7 @@ export interface BasketEntry {
 }
 
 export interface PortfolioConfig {
-  id: string;
+  user_id: string;
   basket: BasketEntry[];
   daily_budget_usd: number;
   max_per_tx_usd: number;
