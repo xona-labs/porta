@@ -4,3 +4,4 @@ web/dist/
 .dev.vars
 .DS_Store
 *.log
+.secrets.local
