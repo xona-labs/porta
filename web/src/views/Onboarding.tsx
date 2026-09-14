@@ -1,27 +1,51 @@
 import { useEffect, useState } from "react";
 import { api, type XStock } from "../api";
-import { Button, Card, CopyButton, Field, inputClass } from "../ui";
+import { Brand, Button, Card, CopyButton, Field, inputClass } from "../ui";
+
+const VALUE_POINTS = [
+  {
+    title: "Invests around the clock",
+    body: "Tokenized stocks trade 24/7 on Solana. Your agent buys small paced slices, weekends included.",
+  },
+  {
+    title: "Hard caps, not promises",
+    body: "Per-trade and 24-hour limits are enforced before anything is signed. The agent cannot overspend.",
+  },
+  {
+    title: "Every trade explained",
+    body: "Signal, price versus the real market, and cap headroom are written down for each buy and skip.",
+  },
+];
 
 export function Welcome({ onLogin, error }: { onLogin: () => void; error?: string | null }) {
   return (
-    <Shell>
-      <p className="text-sm font-semibold tracking-tight text-stone-900">Porta</p>
-      <h1 className="mt-6 text-3xl font-semibold leading-tight tracking-tight">
+    <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col px-4 py-12">
+      <Brand size="lg" />
+      <h1 className="mt-10 text-3xl font-semibold leading-tight tracking-tight">
         Your portfolio, on autopilot.
       </h1>
       <p className="mt-3 max-w-md text-sm leading-relaxed text-stone-600">
-        An agent invests into tokenized stocks on Solana around the clock, inside hard spending
-        caps you set, and writes down the reasoning behind every trade.
+        Pick stocks and a daily amount. An AI agent does the rest, inside limits you control.
       </p>
-      <div className="mt-8 flex flex-col gap-3">
+      <div className="mt-7 flex flex-col gap-3">
         <Button onClick={onLogin}>Continue with email</Button>
       </div>
-      <p className="mt-4 text-xs leading-relaxed text-stone-500">
+      {error ? <p className="mt-4 text-sm text-red-500">{error}</p> : null}
+
+      <div className="mt-10 flex flex-col gap-5 border-t border-stone-200 pt-8">
+        {VALUE_POINTS.map((v) => (
+          <div key={v.title}>
+            <p className="text-sm font-medium text-stone-800">{v.title}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-stone-500">{v.body}</p>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-auto pt-10 text-xs text-stone-400">
         Signing in creates a dedicated agent wallet for you. You fund it with only what you want
         automated; your own wallet is never touched.
       </p>
-      {error ? <p className="mt-4 text-sm text-red-500">{error}</p> : null}
-    </Shell>
+    </div>
   );
 }
 
@@ -99,7 +123,8 @@ export function Setup({ token, onDone }: { token: string; onDone: () => void }) 
 
   return (
     <Shell wide>
-      <h1 className="text-2xl font-semibold tracking-tight">Set up your plan</h1>
+      <Brand />
+      <h1 className="mt-8 text-2xl font-semibold tracking-tight">Set up your plan</h1>
       <p className="mt-2 max-w-lg text-sm leading-relaxed text-stone-600">
         Your agent invests a daily amount into the stocks you pick, spread across the day in
         small buys. It skips overpriced entries and explains every decision.

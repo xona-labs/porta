@@ -18,7 +18,7 @@ import {
   type Trade,
 } from "../api";
 import { pct, qty, shortAddress, shortSig, timeAgo, usd } from "../format";
-import { Button, Card, CopyButton, EmptyNote, SectionLabel, Skeleton, Stat } from "../ui";
+import { Brand, Button, Card, CopyButton, EmptyNote, SectionLabel, Skeleton, Stat } from "../ui";
 
 const REFRESH_MS = 60_000;
 
@@ -84,11 +84,11 @@ export function Dashboard({ token, onSignOut }: { token: string; onSignOut: () =
     <div className="mx-auto min-h-[100dvh] w-full max-w-5xl px-4 py-8">
       <header className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-lg font-semibold tracking-tight">Porta</p>
+          <Brand />
           {config?.paused ? (
-            <p className="text-xs font-medium text-amber-600">Investing paused</p>
+            <p className="mt-1 text-xs font-medium text-amber-600">Investing paused</p>
           ) : (
-            <p className="text-xs text-stone-500">Investing every 30 minutes</p>
+            <p className="mt-1 text-xs text-stone-500">Investing every 30 minutes</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -123,7 +123,9 @@ export function Dashboard({ token, onSignOut }: { token: string; onSignOut: () =
           </p>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-200">
             <div
-              className="h-full rounded-full bg-emerald-600 transition-all"
+              className={`h-full rounded-full transition-all ${
+                capUsedPct >= 100 ? "bg-red-500" : capUsedPct >= 80 ? "bg-amber-500" : "bg-emerald-600"
+              }`}
               style={{ width: `${capUsedPct}%` }}
             />
           </div>
@@ -290,6 +292,18 @@ export function Dashboard({ token, onSignOut }: { token: string; onSignOut: () =
           )}
         </section>
       </div>
+
+      <footer className="mt-12 flex items-center justify-between border-t border-stone-200 pt-6 text-xs text-stone-400">
+        <span>Porta by Xona. Tokenized stocks on Solana.</span>
+        <a
+          href="https://github.com/xona-labs/porta"
+          target="_blank"
+          rel="noreferrer"
+          className="hover:text-stone-600"
+        >
+          GitHub
+        </a>
+      </footer>
     </div>
   );
 }

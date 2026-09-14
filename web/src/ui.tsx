@@ -19,6 +19,19 @@ export function Button({
   return <button className={`${base} ${styles} ${className}`} {...props} />;
 }
 
+export function Brand({ size = "md" }: { size?: "md" | "lg" }) {
+  const mark = size === "lg" ? "h-9 w-9 rounded-xl" : "h-7 w-7 rounded-lg";
+  const word = size === "lg" ? "text-lg" : "text-base";
+  return (
+    <span className="inline-flex items-center gap-2.5">
+      <img src="/xona-mark.png" alt="" className={mark} />
+      <span className={`font-semibold tracking-tight text-stone-900 ${word}`}>
+        Porta <span className="font-normal text-stone-400">by Xona</span>
+      </span>
+    </span>
+  );
+}
+
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <div className={`rounded-2xl border border-stone-200 bg-white ${className}`}>{children}</div>
