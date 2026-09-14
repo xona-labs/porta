@@ -1,0 +1,34 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "porta",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "porta",
+      "database_id": "REPLACE_WITH_D1_ID"
+    }
+  ],
+  "triggers": {
+    // Engine cycle: every 30 minutes. Each cycle is one DCA decision pass.
+    "crons": ["*/30 * * * *"]
+  },
+  "vars": {
+    // Trades are simulated until DRY_RUN is set to "false" as a secret/var.
+    "DRY_RUN": "true",
+    "SIGNAL_API_BASE": "https://api.xona-agent.com",
+    // Skip buys when the xStock trades this far above its underlying (percent).
+    "MAX_PREMIUM_PCT": "1.5",
+    "SLIPPAGE_BPS": "100"
+  }
+  // Secrets (set with `wrangler secret put`):
+  //   SOLANA_SECRET_KEY  base58 secret key of the agent wallet
+  //   SOLANA_RPC_URL     optional, defaults to public mainnet RPC
+}

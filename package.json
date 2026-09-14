@@ -1,0 +1,25 @@
+{
+  "name": "porta",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Porta by Xona. A non-custodial AI portfolio manager for tokenized stocks on Solana.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "npm run web:build && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "wrangler d1 migrations apply porta --remote",
+    "db:migrate:local": "wrangler d1 migrations apply porta --local",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@xona-labs/xpay": "^0.2.32",
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "wrangler": "^4.0.0"
+  }
+}

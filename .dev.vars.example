@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local development. Never commit real keys.
+# Base58 secret key of the agent wallet. Only needed when DRY_RUN=false.
+SOLANA_SECRET_KEY=
+# Optional custom RPC (Helius, Alchemy, ...). Defaults to public mainnet.
+SOLANA_RPC_URL=
