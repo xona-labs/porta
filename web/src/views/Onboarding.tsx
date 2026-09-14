@@ -29,6 +29,11 @@ export function Welcome({ onLogin, error }: { onLogin: () => void; error?: strin
       </p>
       <div className="mt-7 flex flex-col gap-3">
         <Button onClick={onLogin}>Continue with email</Button>
+        <a href="/demo" className="w-full">
+          <Button variant="ghost" className="w-full">
+            See a live portfolio
+          </Button>
+        </a>
       </div>
       {error ? <p className="mt-4 text-sm text-red-500">{error}</p> : null}
 

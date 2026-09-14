@@ -28,7 +28,8 @@
     // Skip buys when the xStock trades this far above its underlying (percent).
     "MAX_PREMIUM_PCT": "1.5",
     "SLIPPAGE_BPS": "100",
-    "PRIVY_APP_ID": "cmriuk72e00100dkym2vzsn5d"
+    "PRIVY_APP_ID": "cmriuk72e00100dkym2vzsn5d",
+    "DEMO_USER_ID": "cb88e0be-2058-4e13-8034-1f81ae641a72"
   }
   // Secrets (set with `wrangler secret put`):
   //   MASTER_KEY      32 bytes base64; encrypts per-user agent wallet secrets

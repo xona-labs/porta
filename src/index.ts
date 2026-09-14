@@ -1,10 +1,17 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { Env } from "./types";
 import { runCycle } from "./engine/cycle";
 import { getConfig, getHoldings, saveConfig, spentLast24h } from "./lib/db";
 import { XSTOCKS } from "./lib/xstocks";
 import { fetchLatestSignals } from "./lib/signals";
-import { createSession, createUser, getUserByPrivyId, getUserByToken, type User } from "./lib/users";
+import {
+  createSession,
+  createUser,
+  getUserById,
+  getUserByPrivyId,
+  getUserByToken,
+  type User,
+} from "./lib/users";
 import { fetchUsdcBalance } from "./lib/solana";
 import { verifyPrivyToken } from "./lib/privy";
 
@@ -87,6 +94,22 @@ app.post("/api/cycle/run", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---------- public read-only demo portfolio ----------
+
+app.use("/api/demo/*", async (c, next) => {
+  if (!c.env.DEMO_USER_ID) return c.json({ error: "no demo portfolio configured" }, 404);
+  const user = await getUserById(c.env, c.env.DEMO_USER_ID);
+  if (!user) return c.json({ error: "no demo portfolio configured" }, 404);
+  c.set("user", user);
+  await next();
+});
+
+app.get("/api/demo/portfolio", (c) => portfolioResponse(c));
+app.get("/api/demo/config", (c) => configResponse(c));
+app.get("/api/demo/trades", (c) => tradesResponse(c));
+app.get("/api/demo/cycles", (c) => cyclesResponse(c));
+app.get("/api/demo/equity", (c) => equityResponse(c));
+
 // ---------- authenticated (bearer token from onboarding) ----------
 
 app.use("/api/me/*", async (c, next) => {
@@ -103,10 +126,7 @@ app.get("/api/me", (c) => {
   return c.json({ user });
 });
 
-app.get("/api/me/config", async (c) => {
-  const cfg = await getConfig(c.env.DB, c.get("user").id);
-  return c.json({ config: cfg });
-});
+app.get("/api/me/config", (c) => configResponse(c));
 
 app.put("/api/me/config", async (c) => {
   const body = await c.req.json<{
@@ -137,16 +157,30 @@ app.put("/api/me/config", async (c) => {
   return c.json({ ok: true });
 });
 
-app.get("/api/me/portfolio", async (c) => {
-  const userId = c.get("user").id;
+app.get("/api/me/portfolio", (c) => portfolioResponse(c));
+app.get("/api/me/trades", (c) => tradesResponse(c));
+app.get("/api/me/cycles", (c) => cyclesResponse(c));
+app.get("/api/me/equity", (c) => equityResponse(c));
+
+// ---------- shared handlers ----------
+
+type Ctx = Context<{ Bindings: Env; Variables: Vars }>;
+
+async function configResponse(c: Ctx) {
+  const cfg = await getConfig(c.env.DB, c.get("user").id);
+  return c.json({ config: cfg });
+}
+
+async function portfolioResponse(c: Ctx) {
+  const user = c.get("user");
   const [holdings, spent, cfg, cash] = await Promise.all([
-    getHoldings(c.env.DB, userId),
-    spentLast24h(c.env.DB, userId),
-    getConfig(c.env.DB, userId),
-    fetchUsdcBalance(c.get("user").wallet_pubkey, c.env.SOLANA_RPC_URL),
+    getHoldings(c.env.DB, user.id),
+    spentLast24h(c.env.DB, user.id),
+    getConfig(c.env.DB, user.id),
+    fetchUsdcBalance(user.wallet_pubkey, c.env.SOLANA_RPC_URL),
   ]);
   return c.json({
-    deposit_address: c.get("user").wallet_pubkey,
+    deposit_address: user.wallet_pubkey,
     cash_usd: cash,
     holdings,
     spent_last_24h_usd: spent,
@@ -154,9 +188,9 @@ app.get("/api/me/portfolio", async (c) => {
       ? { max_per_tx_usd: cfg.max_per_tx_usd, max_per_day_usd: cfg.max_per_day_usd }
       : null,
   });
-});
+}
 
-app.get("/api/me/trades", async (c) => {
+async function tradesResponse(c: Ctx) {
   const limit = clampLimit(c.req.query("limit"));
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM trades WHERE user_id = ?1 ORDER BY id DESC LIMIT ?2"
@@ -164,9 +198,9 @@ app.get("/api/me/trades", async (c) => {
     .bind(c.get("user").id, limit)
     .all();
   return c.json({ trades: results });
-});
+}
 
-app.get("/api/me/cycles", async (c) => {
+async function cyclesResponse(c: Ctx) {
   const limit = clampLimit(c.req.query("limit"));
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM cycles WHERE user_id = ?1 ORDER BY id DESC LIMIT ?2"
@@ -174,16 +208,16 @@ app.get("/api/me/cycles", async (c) => {
     .bind(c.get("user").id, limit)
     .all();
   return c.json({ cycles: results });
-});
+}
 
-app.get("/api/me/equity", async (c) => {
+async function equityResponse(c: Ctx) {
   const { results } = await c.env.DB.prepare(
     "SELECT * FROM equity_snapshots WHERE user_id = ?1 ORDER BY id DESC LIMIT 336"
   )
     .bind(c.get("user").id)
     .all();
   return c.json({ snapshots: (results ?? []).reverse() });
-});
+}
 
 // ---------- helpers ----------
 

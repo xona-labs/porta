@@ -82,6 +82,13 @@ export async function getUserByToken(env: Env, token: string): Promise<User | nu
   return row ?? null;
 }
 
+export async function getUserById(env: Env, id: string): Promise<User | null> {
+  const row = await env.DB.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?1`)
+    .bind(id)
+    .first<User>();
+  return row ?? null;
+}
+
 export async function getUserByPrivyId(env: Env, privyUserId: string): Promise<User | null> {
   const row = await env.DB.prepare(`SELECT ${USER_COLS} FROM users WHERE privy_user_id = ?1`)
     .bind(privyUserId)

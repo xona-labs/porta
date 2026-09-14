@@ -113,6 +113,15 @@ export const api = {
   equity: (token: string) => request<{ snapshots: EquitySnapshot[] }>("/api/me/equity", {}, token),
 };
 
+/** Read-only view of the public demo portfolio. Same shapes, no auth. */
+export const demoApi = {
+  config: () => request<{ config: PortfolioConfig | null }>("/api/demo/config"),
+  portfolio: () => request<Portfolio>("/api/demo/portfolio"),
+  trades: () => request<{ trades: Trade[] }>("/api/demo/trades?limit=50"),
+  cycles: () => request<{ cycles: Cycle[] }>("/api/demo/cycles?limit=30"),
+  equity: () => request<{ snapshots: EquitySnapshot[] }>("/api/demo/equity"),
+};
+
 const TOKEN_KEY = "porta_token";
 
 export function readToken(): string | null {

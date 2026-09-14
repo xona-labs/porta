@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import {
   api,
+  demoApi,
   clearToken,
   type Cycle,
   type EquitySnapshot,
@@ -22,7 +23,15 @@ import { Brand, Button, Card, CopyButton, EmptyNote, SectionLabel, Skeleton, Sta
 
 const REFRESH_MS = 60_000;
 
-export function Dashboard({ token, onSignOut }: { token: string; onSignOut: () => void }) {
+export function Dashboard({
+  token,
+  onSignOut,
+  demo = false,
+}: {
+  token: string;
+  onSignOut: () => void;
+  demo?: boolean;
+}) {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [config, setConfig] = useState<PortfolioConfig | null>(null);
   const [trades, setTrades] = useState<Trade[] | null>(null);
@@ -32,13 +41,22 @@ export function Dashboard({ token, onSignOut }: { token: string; onSignOut: () =
   const [pausing, setPausing] = useState(false);
 
   const refresh = useCallback(() => {
-    api.portfolio(token).then(setPortfolio).catch(() => {});
-    api.config(token).then((r) => setConfig(r.config)).catch(() => {});
-    api.trades(token).then((r) => setTrades(r.trades)).catch(() => {});
-    api.cycles(token).then((r) => setCycles(r.cycles)).catch(() => {});
-    api.equity(token).then((r) => setEquity(r.snapshots)).catch(() => {});
+    const src = demo
+      ? demoApi
+      : {
+          portfolio: () => api.portfolio(token),
+          config: () => api.config(token),
+          trades: () => api.trades(token),
+          cycles: () => api.cycles(token),
+          equity: () => api.equity(token),
+        };
+    src.portfolio().then(setPortfolio).catch(() => {});
+    src.config().then((r) => setConfig(r.config)).catch(() => {});
+    src.trades().then((r) => setTrades(r.trades)).catch(() => {});
+    src.cycles().then((r) => setCycles(r.cycles)).catch(() => {});
+    src.equity().then((r) => setEquity(r.snapshots)).catch(() => {});
     api.signals().then((r) => setSignals(r.signals)).catch(() => {});
-  }, [token]);
+  }, [token, demo]);
 
   useEffect(() => {
     refresh();
@@ -85,7 +103,11 @@ export function Dashboard({ token, onSignOut }: { token: string; onSignOut: () =
       <header className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Brand />
-          {config?.paused ? (
+          {demo ? (
+            <p className="mt-1 text-xs font-medium text-emerald-700">
+              Live demo portfolio, real trades on Solana mainnet
+            </p>
+          ) : config?.paused ? (
             <p className="mt-1 text-xs font-medium text-amber-600">Investing paused</p>
           ) : (
             <p className="mt-1 text-xs text-stone-500">Investing every 30 minutes</p>
@@ -93,17 +115,32 @@ export function Dashboard({ token, onSignOut }: { token: string; onSignOut: () =
         </div>
         <div className="flex items-center gap-2">
           {portfolio ? (
-            <span className="num rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-xs text-stone-600">
+            <a
+              href={`https://solscan.io/account/${portfolio.deposit_address}`}
+              target="_blank"
+              rel="noreferrer"
+              className="num rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-xs text-stone-600 hover:border-stone-400"
+            >
               {shortAddress(portfolio.deposit_address)}
-            </span>
+            </a>
           ) : null}
-          {portfolio ? <CopyButton text={portfolio.deposit_address} label="Copy address" /> : null}
-          <Button variant="ghost" onClick={togglePause} disabled={pausing || !config}>
-            {config?.paused ? "Resume" : "Pause"}
-          </Button>
-          <Button variant="ghost" onClick={signOut}>
-            Sign out
-          </Button>
+          {demo ? (
+            <a href="/">
+              <Button>Create your own</Button>
+            </a>
+          ) : (
+            <>
+              {portfolio ? (
+                <CopyButton text={portfolio.deposit_address} label="Copy address" />
+              ) : null}
+              <Button variant="ghost" onClick={togglePause} disabled={pausing || !config}>
+                {config?.paused ? "Resume" : "Pause"}
+              </Button>
+              <Button variant="ghost" onClick={signOut}>
+                Sign out
+              </Button>
+            </>
+          )}
         </div>
       </header>
 

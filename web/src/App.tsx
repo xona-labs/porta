@@ -8,6 +8,13 @@ import { Skeleton } from "./ui";
 type Phase = "boot" | "welcome" | "resolving" | "setup" | "dashboard";
 
 export default function App() {
+  if (window.location.pathname.startsWith("/demo")) {
+    return <Dashboard token="" onSignOut={() => {}} demo />;
+  }
+  return <AuthedApp />;
+}
+
+function AuthedApp() {
   const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
   const [token, setToken] = useState<string | null>(readToken);
   const [phase, setPhase] = useState<Phase>("boot");

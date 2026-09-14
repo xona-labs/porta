@@ -7,6 +7,8 @@ export interface Env {
   SLIPPAGE_BPS: string;
   /** Privy app id for email login. */
   PRIVY_APP_ID?: string;
+  /** User id whose portfolio is exposed read-only at /api/demo/*. */
+  DEMO_USER_ID?: string;
   /** 32-byte base64 key encrypting per-user agent wallet secrets. */
   MASTER_KEY?: string;
   /** When set, POST /api/cycle/run requires this bearer token. */
