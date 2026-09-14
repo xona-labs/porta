@@ -322,8 +322,8 @@ export function Dashboard({
             <EmptyNote>The agent reports here every cycle.</EmptyNote>
           ) : (
             <div className="flex flex-col gap-2">
-              {cycles.map((c) => (
-                <ActivityRow key={c.id} cycle={c} />
+              {dedupeCycles(cycles).map(({ cycle, count }) => (
+                <ActivityRow key={cycle.id} cycle={cycle} count={count} />
               ))}
             </div>
           )}
@@ -351,7 +351,19 @@ interface CycleDetail {
   error?: string;
 }
 
-function ActivityRow({ cycle }: { cycle: Cycle }) {
+/** Collapses runs of same-status error rows so retries read as one line. */
+function dedupeCycles(cycles: Cycle[]): { cycle: Cycle; count: number }[] {
+  const out: { cycle: Cycle; count: number }[] = [];
+  for (const c of cycles) {
+    const prev = out[out.length - 1];
+    const collapsible = c.status === "trade_error" || c.status === "error";
+    if (prev && collapsible && prev.cycle.status === c.status) prev.count += 1;
+    else out.push({ cycle: c, count: 1 });
+  }
+  return out;
+}
+
+function ActivityRow({ cycle, count = 1 }: { cycle: Cycle; count?: number }) {
   const detail = useMemo<CycleDetail>(() => {
     try {
       return JSON.parse(cycle.detail) as CycleDetail;
@@ -370,14 +382,19 @@ function ActivityRow({ cycle }: { cycle: Cycle }) {
         ? skips.length > 0
           ? "Held back this cycle"
           : detail.reason ?? "Nothing to do"
-        : cycle.status === "error" || cycle.status === "trade_error"
-          ? "Cycle error"
-          : cycle.status;
+        : cycle.status === "trade_error"
+          ? "A buy did not go through, retrying next cycle"
+          : cycle.status === "error"
+            ? "Cycle hit an error, retrying next cycle"
+            : cycle.status;
 
   return (
     <Card className="p-3.5">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-sm font-medium">{summary}</p>
+        <p className="text-sm font-medium">
+          {summary}
+          {count > 1 ? <span className="ml-1.5 text-xs text-stone-400">x{count}</span> : null}
+        </p>
         <p className="num shrink-0 text-[11px] text-stone-400">{timeAgo(cycle.ts)}</p>
       </div>
       {skips.length > 0 ? (
@@ -389,7 +406,11 @@ function ActivityRow({ cycle }: { cycle: Cycle }) {
           ))}
         </ul>
       ) : null}
-      {detail.error ? <p className="mt-1 text-xs text-red-500">{detail.error}</p> : null}
+      {detail.error ? (
+        <p className="mt-1 truncate text-xs text-stone-400" title={detail.error}>
+          {detail.error.replace(/^Error:\s*/, "")}
+        </p>
+      ) : null}
     </Card>
   );
 }
