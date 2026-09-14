@@ -44,18 +44,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // A stored Porta session wins; Privy is only the way to acquire one.
+    if (token) {
+      setPhase((p) => (p === "boot" || p === "welcome" ? "resolving" : p));
+      void resolvePhase(token);
+      return;
+    }
     if (!ready) return;
     if (!authenticated) {
       setPhase("welcome");
       return;
     }
-    if (!token) {
-      setPhase("resolving");
-      void exchange();
-      return;
-    }
-    setPhase((p) => (p === "boot" || p === "welcome" || p === "resolving" ? "resolving" : p));
-    void resolvePhase(token);
+    setPhase("resolving");
+    void exchange();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, authenticated, token]);
 

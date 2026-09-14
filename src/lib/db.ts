@@ -48,6 +48,22 @@ export async function saveConfig(
     .run();
 }
 
+/** USD invested per ticker in the trailing 24 hours; drives DCA pacing. */
+export async function spentPerTickerLast24h(
+  db: D1Database,
+  userId: string
+): Promise<Map<string, number>> {
+  const since = new Date(Date.now() - 24 * 3600_000).toISOString();
+  const { results } = await db
+    .prepare(
+      `SELECT ticker, SUM(usd) AS total FROM trades
+       WHERE user_id = ?1 AND side = 'buy' AND ts >= ?2 GROUP BY ticker`
+    )
+    .bind(userId, since)
+    .all<{ ticker: string; total: number }>();
+  return new Map((results ?? []).map((r) => [r.ticker, r.total]));
+}
+
 /** USD spent by this user in the trailing 24 hours. Backs the durable daily cap. */
 export async function spentLast24h(db: D1Database, userId: string): Promise<number> {
   const since = new Date(Date.now() - 24 * 3600_000).toISOString();

@@ -11,11 +11,13 @@ import {
   recordTrade,
   snapshotEquity,
   spentLast24h,
+  spentPerTickerLast24h,
 } from "../lib/db";
 
 // A 30-minute cron gives 48 cycles per day.
 const CYCLES_PER_DAY = 48;
 const MIN_TICKET_USD = 0.5;
+const ALLOCATION_EPSILON_USD = 0.05;
 
 /**
  * One engine pass over every active portfolio. Signals are fetched once
@@ -54,7 +56,8 @@ async function runUserCycle(env: Env, user: User, signals: Map<string, StockSign
   const slippageBps = parseInt(env.SLIPPAGE_BPS, 10) || 100;
 
   const spent = await spentLast24h(env.DB, user.id);
-  const decisions = decide(cfg, signals, spent, maxPremiumPct);
+  const tickerSpent = await spentPerTickerLast24h(env.DB, user.id);
+  const decisions = decide(cfg, signals, spent, tickerSpent, maxPremiumPct);
   let buys = decisions.filter((d) => d.action === "buy");
 
   // Pre-trade balance check via public RPC; no key material involved.
@@ -105,27 +108,42 @@ async function runUserCycle(env: Env, user: User, signals: Map<string, StockSign
 
 /**
  * Pure decision logic, kept side-effect free so it is unit-testable.
- * Per basket entry: DCA a fixed slice of the daily budget, but only when
- * the signal is not bearish and the xStock is not trading rich.
+ *
+ * Budget pacing: each ticker has a rolling 24h allocation (weight x daily
+ * budget). Whenever a ticker is behind its allocation, the agent buys a
+ * ticket sized between the minimum and the per-trade cap, but only when the
+ * signal is not bearish and the xStock is not trading rich. Small budgets
+ * therefore trade less often instead of never.
  */
 export function decide(
   cfg: PortfolioConfig,
   signals: Map<string, StockSignal>,
   spentLast24hUsd: number,
+  tickerSpent: Map<string, number>,
   maxPremiumPct: number
 ): Decision[] {
-  const perCycleBudget = cfg.daily_budget_usd / CYCLES_PER_DAY;
   const decisions: Decision[] = [];
+  let plannedSpend = 0;
 
   for (const entry of cfg.basket) {
     const ticker = entry.ticker.toUpperCase();
     const signal = signals.get(ticker);
-    let usd = round2(perCycleBudget * entry.weight);
 
     const skip = (reason: string): Decision => ({ ticker, action: "skip", usd: 0, reason, signal });
 
-    if (usd < MIN_TICKET_USD) {
-      decisions.push(skip(`ticket $${usd} below $${MIN_TICKET_USD} minimum`));
+    const dailyTarget = cfg.daily_budget_usd * entry.weight;
+    const spentT = tickerSpent.get(ticker) ?? 0;
+    const behind = dailyTarget - spentT;
+
+    // Ticket: the natural per-cycle slice, floored at the minimum trade
+    // size and capped by the per-trade limit and the remaining allocation.
+    const slice = dailyTarget / CYCLES_PER_DAY;
+    const ticket = round2(Math.min(Math.max(slice, MIN_TICKET_USD), cfg.max_per_tx_usd, behind));
+
+    if (behind < MIN_TICKET_USD - ALLOCATION_EPSILON_USD || ticket < MIN_TICKET_USD) {
+      decisions.push(
+        skip(`on pace: $${spentT.toFixed(2)} of $${dailyTarget.toFixed(2)} daily allocation invested`)
+      );
       continue;
     }
     if (!signal) {
@@ -146,13 +164,15 @@ export function decide(
       continue;
     }
 
-    usd = Math.min(usd, cfg.max_per_tx_usd);
-    const dayHeadroom = cfg.max_per_day_usd - spentLast24hUsd;
-    if (dayHeadroom < usd) {
-      decisions.push(skip(`daily cap reached ($${spentLast24hUsd.toFixed(2)} of $${cfg.max_per_day_usd} spent)`));
+    const dayHeadroom = cfg.max_per_day_usd - spentLast24hUsd - plannedSpend;
+    if (dayHeadroom < ticket) {
+      decisions.push(
+        skip(`24h cap reached ($${(spentLast24hUsd + plannedSpend).toFixed(2)} of $${cfg.max_per_day_usd} spent)`)
+      );
       continue;
     }
 
+    plannedSpend += ticket;
     const premiumNote =
       signal.premium_discount_pct === null
         ? "premium unknown"
@@ -160,11 +180,11 @@ export function decide(
     decisions.push({
       ticker,
       action: "buy",
-      usd,
+      usd: ticket,
       reason:
-        `DCA ${entry.weight * 100}% slice; signal ${signal.sentiment} ` +
-        `(confidence ${signal.confidence}); ${premiumNote}; ` +
-        `$${(dayHeadroom - usd).toFixed(2)} daily headroom after this buy`,
+        `$${spentT.toFixed(2)} of $${dailyTarget.toFixed(2)} daily allocation invested; ` +
+        `signal ${signal.sentiment} (confidence ${signal.confidence}); ${premiumNote}; ` +
+        `$${(dayHeadroom - ticket).toFixed(2)} left under the 24h cap`,
       signal,
     });
   }
